@@ -1,0 +1,56 @@
+# tests/eval_questions.yaml
+# ─────────────────────────
+#
+# Format:
+#   - question:     The question to ask the RAG pipeline.
+#     ground_truth: (Optional) The ideal answer for context_recall scoring.
+#
+# Without ground_truth: faithfulness, answer_relevancy, context_precision
+# With ground_truth:    all of the above + context_recall
+
+# ── Core feature questions ────────────────────────────────────────────────
+- question: "What is DocuMind and what problem does it solve?"
+  ground_truth: >
+    DocuMind is a RAG-powered document intelligence assistant that enables
+    precise question-answering grounded in uploaded documents, eliminating
+    hallucinations by tying every answer to source material.
+
+- question: "What are the four stages of the retrieval pipeline?"
+  ground_truth: >
+    The four stages are: (1) Query rewriting via MultiQueryRetriever,
+    (2) Hybrid search combining semantic vector search with BM25 keyword search,
+    (3) Cross-encoder re-ranking with FlashRank, and (4) LLM answer generation.
+
+- question: "What API endpoints does DocuMind expose?"
+  ground_truth: >
+    DocuMind exposes: POST /ingest to upload documents, POST /query to ask
+    questions, GET /sources to list documents, DELETE /sources/{name} to
+    remove a document, and POST /session/clear to reset conversation history.
+
+- question: "What is the average query latency?"
+  ground_truth: "Average query latency is 1.2 seconds using Groq inference."
+
+- question: "How does multi-tenancy work in DocuMind?"
+  ground_truth: >
+    Each user's documents are isolated using ChromaDB metadata filters
+    keyed on user_id. In production, user IDs are derived from JWT tokens.
+
+# ── Configuration questions ───────────────────────────────────────────────
+- question: "What environment variables are required to run DocuMind?"
+  ground_truth: >
+    The required variable is GROQ_API_KEY or OPENAI_API_KEY for the LLM.
+    Optional variables include CHROMA_PERSIST_DIR, HISTORY_K, CHUNK_SIZE,
+    CHUNK_OVERLAP, and LangSmith tracing variables.
+
+# ── Limitation / next steps ───────────────────────────────────────────────
+- question: "What are the current limitations of DocuMind?"
+  ground_truth: >
+    Current limitations include no support for images within PDFs, no streaming
+    responses, and an in-memory BM25 index that does not scale beyond
+    approximately 10,000 documents per user.
+
+# ── Grounding test (answer should be "I don't know") ─────────────────────
+- question: "What is the price of the DocuMind enterprise plan?"
+  ground_truth: >
+    This information is not available in the documentation.
+    DocuMind should respond that it cannot find this in the uploaded documents.

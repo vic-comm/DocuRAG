@@ -29,24 +29,42 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+# def _build_llm():
+#     """Returns LLM for query rewriting (must match rag_engine LLM)."""
+#     if settings.llm_provider == "groq":
+#         from langchain_groq import ChatGroq
+#         return ChatGroq(
+#             model_name=settings.groq_model,
+#             temperature=0,
+#             groq_api_key=settings.groq_api_key,
+#         )
+#     else:
+#         from langchain_openai import ChatOpenAI
+#         return ChatOpenAI(
+#             model=settings.openai_model,
+#             temperature=0,
+#             openai_api_key=settings.openai_api_key,
+#         )
+
 def _build_llm():
-    """Returns LLM for query rewriting (must match rag_engine LLM)."""
-    if settings.llm_provider == "groq":
+    # Call the new method instead of .llm_provider
+    provider = settings.get_llm_provider()
+    
+    if provider == "groq":
         from langchain_groq import ChatGroq
         return ChatGroq(
-            model_name=settings.groq_model,
-            temperature=0,
             groq_api_key=settings.groq_api_key,
+            model_name=settings.groq_model,
+            temperature=0
         )
-    else:
+    elif provider == "openai":
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            model=settings.openai_model,
-            temperature=0,
-            openai_api_key=settings.openai_api_key,
-        )
-
-
+        return ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key)
+    
+    import streamlit as st
+    st.error("No LLM API keys found in Secrets.")
+    st.stop()
+    
 class RetrieverFactory:
     """
     Builds and caches the full retrieval pipeline per user.

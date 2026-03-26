@@ -66,21 +66,25 @@ Context from retrieved documents:
 #  LLM factory                                                                
 
 def _build_llm():
-    if settings.llm_provider == "groq":
+    provider = settings.get_llm_provider()  # was: settings.llm_provider
+    if provider == "groq":
         from langchain_groq import ChatGroq
         return ChatGroq(
-            model_name=settings.groq_model,
+            model_name="llama3-70b-8192",
             temperature=0,
             groq_api_key=settings.groq_api_key,
         )
-    else:
+    elif provider == "openai":
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(
-            model=settings.openai_model,
+            model="gpt-4o",
             temperature=0,
             openai_api_key=settings.openai_api_key,
         )
-
+    else:
+        raise ValueError(
+            "No LLM API key found. Add GROQ_API_KEY to Streamlit secrets."
+        )
 
 #  Engine                                                                      
 

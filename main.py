@@ -46,9 +46,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 #  App                                                                         
-
 app = FastAPI(
-    title="DocuMind API",
+    title="DocuRAG API",
     description="RAG-powered document intelligence backend",
     version="1.0.0",
 )
@@ -87,10 +86,7 @@ async def get_current_user_id(token: str | None = Depends(oauth2_scheme)) -> str
     return token
 
 
-# ──────────────────────────────────────────────────────────────────────────── #
-#  Request / Response models                                                    #
-# ──────────────────────────────────────────────────────────────────────────── #
-
+#  Request / Response models                                                  
 class QueryRequest(BaseModel):
     question: str
     session_id: str | None = None  # Auto-generated if not provided
@@ -106,10 +102,7 @@ class ClearSessionRequest(BaseModel):
     session_id: str
 
 
-# ──────────────────────────────────────────────────────────────────────────── #
-#  Endpoints                                                                    #
-# ──────────────────────────────────────────────────────────────────────────── #
-
+#  Endpoints                                                                    
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "DocuMind API"}
@@ -206,8 +199,6 @@ async def clear_session(
     engine.clear_session(body.session_id)
     return {"message": f"Session '{body.session_id}' cleared."}
 
-
-#  Entry point                                                 
 
 if __name__ == "__main__":
     uvicorn.run(

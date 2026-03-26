@@ -24,10 +24,7 @@ import uuid
 from pathlib import Path
 
 
-# ──────────────────────────────────────────────────────────────────────────── #
-#  Colour helpers (works on most terminals)                                     #
-# ──────────────────────────────────────────────────────────────────────────── #
-
+#  Colour helpers (works on most terminals)                                     
 class C:
     RESET  = "\033[0m"
     BOLD   = "\033[1m"

@@ -1,6 +1,4 @@
 """
-src/conversation_history.py
-────────────────────────────
 ConversationSummaryBufferMessageHistory:
   - Keeps the most recent `k` messages in full
   - Older messages are summarised by the LLM into a single SystemMessage
@@ -40,10 +38,6 @@ class ConversationSummaryBufferMessageHistory(BaseChatMessageHistory, BaseModel)
     messages: list[BaseMessage] = Field(default_factory=list)
     llm: ChatGroq = Field(default_factory=ChatGroq)
     k: int = Field(default=6)
-
-    # ------------------------------------------------------------------ #
-    #  Public API                                                          #
-    # ------------------------------------------------------------------ #
 
     def add_messages(self, messages: list[BaseMessage]) -> None:
         """

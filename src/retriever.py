@@ -1,72 +1,36 @@
 """
-src/rag_engine.py
-──────────────────
-MultiTenantRAGEngine:
-  - Per-user document isolation (Chroma metadata filter)
-  - Per-session conversational memory (summary buffer)
-  - Full 4-stage retrieval pipeline (hybrid + rerank + rewrite)
-  - Structured response: answer + source citations
+Advanced 4-stage retrieval pipeline:
 
-Architecture:
-  [Query]
-      │
-      ▼
-  [ConversationHistory]  ←── session memory
-      │
-      ▼
-  [RetrieverFactory]     ←── hybrid search → rerank
-      │  (docs + context)
-      ▼
-  [ChatPromptTemplate]   ←── system + history + context + question
-      │
-      ▼
-  [LLM]                  ←── Groq / OpenAI
-      │
-      ▼
-  [Response: answer + sources]
+  Stage 1 — Query Rewriting   : MultiQueryRetriever generates query variants
+  Stage 2 — Hybrid Search     : Semantic (Chroma) + Keyword (BM25) via EnsembleRetriever
+  Stage 3 — Re-ranking        : FlashRank cross-encoder selects top-N most relevant chunks
+  Stage 4 — Result            : Returns ranked Document list with metadata
+
+Retriever instances are cached per user_id and invalidated when new
+documents are added.
 """
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
-from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_classic.retrievers.contextual_compression import ContextualCompressionRetriever
+from langchain_classic.retrievers import EnsembleRetriever
+from langchain_classic.retrievers import MultiQueryRetriever
+
+from langchain_community.document_compressors import FlashrankRerank
+from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from src.config import get_settings
-from src.conversation_history import ConversationSummaryBufferMessageHistory
-from src.dataloader import process_uploaded_file
-from src.retriever import RetrieverFactory
 from src.vector_store import VectorStoreManager
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# ──────────────────────────────────────────────────────────────────────────── #
-#  Prompt                                                                       #
-# ──────────────────────────────────────────────────────────────────────────── #
-
-SYSTEM_PROMPT = """You are DocuMind, an expert document intelligence assistant.
-Your job is to answer questions accurately and concisely using ONLY the provided context.
-
-Rules:
-- Answer strictly from the context below. Do not use prior knowledge.
-- If the answer is not in the context, say: "I couldn't find that in the uploaded documents."
-- Always cite the source document and page number when referencing specific information.
-- Be concise but complete. Use bullet points for multi-part answers.
-- If asked a follow-up question, use the conversation history to maintain context.
-
-Context from retrieved documents:
-────────────────────────────────
-{context}
-────────────────────────────────"""
-
-
-#  LLM factory                                                                  #
 
 def _build_llm():
+    """Returns LLM for query rewriting (must match rag_engine LLM)."""
     if settings.llm_provider == "groq":
         from langchain_groq import ChatGroq
         return ChatGroq(
@@ -83,158 +47,136 @@ def _build_llm():
         )
 
 
-#  Engine                                                                        
-class MultiTenantRAGEngine:
+class RetrieverFactory:
     """
-    Production-ready RAG engine with multi-tenant isolation,
-    conversational memory, and advanced retrieval.
+    Builds and caches the full retrieval pipeline per user.
+    Call `.invalidate(user_id)` after adding new documents for that user.
     """
 
-    def __init__(self):
-        self.vs_manager = VectorStoreManager()
-        self.retriever_factory = RetrieverFactory(self.vs_manager)
+    def __init__(self, vs_manager: VectorStoreManager):
+        self.vs_manager = vs_manager
         self.llm = _build_llm()
+        self._cache: dict[str, ContextualCompressionRetriever] = {}
 
-        # Per-session conversation stores {session_id: history}
-        self._session_store: dict[str, BaseChatMessageHistory] = {}
+    def get(self, user_id: str):
+        """Returns a cached retriever, building it if necessary."""
+        if user_id not in self._cache:
+            logger.info(f"Building retrieval pipeline for user '{user_id}'")
+            self._cache[user_id] = self._build(user_id)
+        return self._cache[user_id]
 
-        # Build the chain once
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", SYSTEM_PROMPT),
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "{question}"),
-        ])
+    def invalidate(self, user_id: str) -> None:
+        """Clears cached retriever so next call rebuilds with fresh data."""
+        self._cache.pop(user_id, None)
+        logger.debug(f"Retriever cache invalidated for user '{user_id}'")
 
-        self._chain = RunnableWithMessageHistory(
-            self.prompt | self.llm | StrOutputParser(),
-            self._get_session_history,
-            input_messages_key="question",
-            history_messages_key="history",
+    # def _build(self, user_id: str):
+    #     """
+    #     Constructs the full 4-stage pipeline for a user.
+    #     Falls back to semantic-only if no documents are found for BM25.
+    #     """
+    #     # ── Stage 1 base: Semantic retriever ──────────────────────────── #
+    #     vector_retriever = self.vs_manager.get_base_retriever(user_id)
+
+    #     # ── Stage 2: Hybrid search (Semantic + BM25) ──────────────────── #
+    #     raw = self.vs_manager.get_user_documents_raw(user_id)
+    #     texts = raw.get("documents", [])
+    #     metadatas = raw.get("metadatas", [])
+
+    #     if texts:
+    #         bm25 = BM25Retriever.from_texts(texts, metadatas=metadatas)
+    #         bm25.k = settings.bm25_k
+
+    #         ensemble = EnsembleRetriever(
+    #             retrievers=[vector_retriever, bm25],
+    #             weights=[
+    #                 settings.ensemble_vector_weight,
+    #                 1 - settings.ensemble_vector_weight,
+    #             ],
+    #         )
+    #         base_retriever = ensemble
+    #         logger.debug(f"Hybrid retriever built for user '{user_id}'")
+    #     else:
+    #         # No documents yet — return a no-op retriever
+    #         logger.warning(
+    #             f"No documents found for user '{user_id}'. "
+    #             "Using semantic-only retriever."
+    #         )
+    #         base_retriever = vector_retriever
+
+    #     # ── Stage 3: Multi-query rewriting ────────────────────────────── #
+    #     mq_retriever = MultiQueryRetriever.from_llm(
+    #         retriever=base_retriever,
+    #         llm=self.llm,
+    #     )
+
+    #     # ── Stage 4: Cross-encoder re-ranking ─────────────────────────── #
+    #     reranker = ContextualCompressionRetriever(
+    #         base_compressor=FlashrankRerank(top_n=settings.rerank_top_n),
+    #         base_retriever=mq_retriever,
+    #     )
+
+    #     return reranker
+
+    def _build(self, user_id: str):
+        """
+        Constructs the full 4-stage pipeline for a user using Cohere API for reranking.
+        """
+        from langchain_cohere import CohereRerank
+        from langchain_classic.retrievers import ContextualCompressionRetriever
+
+        # ── Stage 1: Semantic retriever ──────────────────────────────── #
+        vector_retriever = self.vs_manager.get_base_retriever(user_id)
+
+        # ── Stage 2: Hybrid search (Semantic + BM25) ─────────────────── #
+        raw = self.vs_manager.get_user_documents_raw(user_id)
+        texts = raw.get("documents", [])
+        metadatas = raw.get("metadatas", [])
+
+        if texts:
+            bm25 = BM25Retriever.from_texts(texts, metadatas=metadatas)
+            bm25.k = settings.bm25_k
+
+            base_retriever = EnsembleRetriever(
+                retrievers=[vector_retriever, bm25],
+                weights=[
+                    settings.ensemble_vector_weight,
+                    1 - settings.ensemble_vector_weight,
+                ],
+            )
+        else:
+            base_retriever = vector_retriever
+
+        # ── Stage 3: Multi-query rewriting ───────────────────────────── #
+        mq_retriever = MultiQueryRetriever.from_llm(
+            retriever=base_retriever,
+            llm=self.llm,
         )
 
-        logger.info("MultiTenantRAGEngine initialised.")
-
-    #  Document management                                                 
-    def ingest_file(
-        self, file_content: bytes, filename: str, user_id: str
-    ) -> dict:
-        """
-        Process a raw file upload and add it to the user's knowledge base.
-
-        Returns:
-            {"chunks_added": int, "source": str}
-        """
-        chunks = process_uploaded_file(file_content, filename)
-        count = self.vs_manager.add_documents(chunks, user_id)
-        # Invalidate retriever so next query uses fresh data
-        self.retriever_factory.invalidate(user_id)
-        logger.info(f"Ingested '{filename}' for user '{user_id}': {count} chunks")
-        return {"chunks_added": count, "source": filename}
-
-    def delete_source(self, user_id: str, source: str) -> None:
-        """Remove a specific document from a user's knowledge base."""
-        self.vs_manager.delete_user_documents(user_id, source=source)
-        self.retriever_factory.invalidate(user_id)
-
-    def list_sources(self, user_id: str) -> list[str]:
-        """Return all uploaded document names for a user."""
-        return self.vs_manager.list_user_sources(user_id)
-
-    def document_count(self, user_id: str) -> int:
-        return self.vs_manager.document_count(user_id)
-
-    #  Querying                                                            
-
-    def ask(self, user_id: str, session_id: str, question: str) -> dict:
-        """
-        Run a full RAG query for a user's session.
-
-        Args:
-            user_id:    Identifies which documents to search.
-            session_id: Identifies which conversation history to use.
-            question:   The user's question.
-
-        Returns:
-            {
-                "answer": str,
-                "sources": [{"source": str, "page": int, "excerpt": str}],
-                "session_id": str,
-            }
-        """
-        if self.document_count(user_id) == 0:
-            return {
-                "answer": "No documents have been uploaded yet. "
-                          "Please upload a PDF or document first.",
-                "sources": [],
-                "session_id": session_id,
-            }
-
-        # 1. Retrieve relevant chunks
-        docs = self.retriever_factory.retrieve(user_id, question)
-
-        # 2. Format context with clear source attribution
-        context = self._format_context(docs)
-
-        # 3. Generate answer with history
-        answer = self._chain.invoke(
-            {"context": context, "question": question},
-            config={"configurable": {"session_id": session_id}},
+        # ── Stage 4: Cohere API Re-ranking ────────────────────────────── #
+        # This replaces FlashrankRerank to save local RAM
+        compressor = CohereRerank(
+            cohere_api_key=settings.cohere_api_key,
+            model="rerank-english-v3.0",
+            top_n=settings.rerank_top_n
         )
 
-        # 4. Build source list for UI display
-        sources = self._extract_sources(docs)
+        reranker = ContextualCompressionRetriever(
+            base_compressor=compressor,
+            base_retriever=mq_retriever,
+        )
 
-        return {
-            "answer": answer,
-            "sources": sources,
-            "session_id": session_id,
-        }
+        return reranker
 
-    def clear_session(self, session_id: str) -> None:
-        """Clears conversation history for a session."""
-        if session_id in self._session_store:
-            self._session_store[session_id].clear()
-            logger.info(f"Cleared history for session '{session_id}'")
-
-    #  Private helpers                                                     
-    def _get_session_history(self, session_id: str) -> BaseChatMessageHistory:
-        if session_id not in self._session_store:
-            self._session_store[session_id] = (
-                ConversationSummaryBufferMessageHistory(
-                    llm=self.llm,
-                    k=settings.history_k,
-                )
-            )
-        return self._session_store[session_id]
-
-    @staticmethod
-    def _format_context(docs: list[Document]) -> str:
-        """Formats retrieved documents into a readable context block."""
-        if not docs:
-            return "No relevant context found."
-        parts = []
-        for i, doc in enumerate(docs, 1):
-            source = doc.metadata.get("source", "unknown")
-            page = doc.metadata.get("page", "N/A")
-            parts.append(
-                f"[{i}] Source: {source} | Page: {page}\n{doc.page_content}"
-            )
-        return "\n\n".join(parts)
-
-    @staticmethod
-    def _extract_sources(docs: list[Document]) -> list[dict]:
-        """Builds the source citation list returned to the client."""
-        seen = set()
-        sources = []
-        for doc in docs:
-            source = doc.metadata.get("source", "unknown")
-            page = doc.metadata.get("page", "N/A")
-            key = f"{source}:{page}"
-            if key not in seen:
-                seen.add(key)
-                sources.append({
-                    "source": source,
-                    "page": page,
-                    "excerpt": doc.page_content[:250].strip() + "…",
-                })
-        return sources
+    def retrieve(self, user_id: str, query: str) -> list[Document]:
+        """
+        Convenience method: runs the full pipeline and returns ranked docs.
+        """
+        retriever = self.get(user_id)
+        try:
+            docs = retriever.invoke(query)
+        except Exception as e:
+            logger.error(f"Retrieval failed for user '{user_id}': {e}")
+            # Fallback to basic semantic search
+            docs = self.vs_manager.get_base_retriever(user_id).invoke(query)
+        return docs

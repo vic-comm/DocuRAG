@@ -13,19 +13,17 @@ import uuid
 from pathlib import Path
 
 import streamlit as st
-
+from streamlit_local_storage import LocalStorage
 from src.config import get_settings
 from src.rag_engine import MultiTenantRAGEngine
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# ──────────────────────────────────────────────────────────────────────────── #
-#  Page config                                                                  #
-# ──────────────────────────────────────────────────────────────────────────── #
+#  Page config                                                                  
 
 st.set_page_config(
-    page_title="DocuMind",
+    page_title="DocuRAG",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -230,7 +228,11 @@ st.markdown("""
   }
 
   /* Hide Streamlit branding */
-  #MainMenu, footer, header { visibility: hidden; }
+  #MainMenu { visibility: hidden; }
+  footer { visibility: hidden; }
+  header[data-testid="stHeader"] { 
+    background: transparent !important; 
+  }
   .viewerBadge_container__1QSob { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -239,27 +241,41 @@ st.markdown("""
 #  Session state init                                                           #
 # ──────────────────────────────────────────────────────────────────────────── #
 
-def init_state():
-    defaults = {
-        "engine": None,
-        "messages": [],          # [{role, content, sources}]
-        "session_id": str(uuid.uuid4()),
-        "user_id": "streamlit_user",
-        "uploaded_docs": [],     # list of filenames
-    }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+local_storage = LocalStorage()
 
-init_state()
+def init_persistent_state(engine_instance=None):
+    # Standard state defaults
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
+        
+    # Persistent User ID logic
+    stored_uid = local_storage.getItem("documind_user_id")
+    if stored_uid:
+        st.session_state.user_id = stored_uid
+    else:
+        new_uid = f"user_{uuid.uuid4().hex[:8]}"
+        st.session_state.user_id = new_uid
+        local_storage.setItem("documind_user_id", new_uid)
+    
+    # Sync documents from DB if engine is ready
+    if engine_instance:
+        try:
+            st.session_state.uploaded_docs = engine_instance.list_sources(
+                st.session_state.user_id
+            )
+        except Exception as e:
+            logger.error(f"Sync failed: {e}")
 
-
-@st.cache_resource(show_spinner="Initialising DocuMind engine…")
+@st.cache_resource(show_spinner="Initialising DocuRAG engine…")
 def load_engine() -> MultiTenantRAGEngine:
     return MultiTenantRAGEngine()
 
 
 engine = load_engine()
+
+init_persistent_state(engine)
 
 # ──────────────────────────────────────────────────────────────────────────── #
 #  Sidebar                                                                      #
@@ -267,6 +283,7 @@ engine = load_engine()
 
 with st.sidebar:
     st.markdown("### 📂 Knowledge Base")
+    st.markdown(f"**User ID:** `{st.session_state.user_id}`")
 
     uploaded_files = st.file_uploader(
         "Upload documents",
@@ -346,7 +363,7 @@ with st.sidebar:
 # Header
 st.markdown("""
 <div class="dm-header">
-  <div class="dm-logo">🧠 DocuMind</div>
+  <div class="dm-logo">🧠 DocuRAG</div>
   <div class="dm-tagline">RAG · Document Intelligence</div>
 </div>
 """, unsafe_allow_html=True)
@@ -355,8 +372,8 @@ st.markdown("""
 if not st.session_state.messages:
     st.markdown("""
     <div class="msg-bot">
-      <div class="msg-label bot">DocuMind</div>
-      Hello! I'm DocuMind — upload your documents in the sidebar and ask me anything about them.
+      <div class="msg-label bot">DocuRAG</div>
+      Hello! I'm DocuRAG — upload your documents in the sidebar and ask me anything about them.
       I'll answer with precise citations from your sources.
       <br><br>
       <b>Try asking:</b><br>
@@ -378,7 +395,7 @@ for msg in st.session_state.messages:
     else:
         st.markdown(
             f'<div class="msg-bot">'
-            f'<div class="msg-label bot">DocuMind</div>'
+            f'<div class="msg-label bot">DocuRAG</div>'
             f'{msg["content"]}</div>',
             unsafe_allow_html=True,
         )

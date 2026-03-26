@@ -1,6 +1,4 @@
 """
-src/rag_engine.py
-──────────────────
 MultiTenantRAGEngine:
   - Per-user document isolation (Chroma metadata filter)
   - Per-session conversational memory (summary buffer)
@@ -44,10 +42,15 @@ from src.vector_store import VectorStoreManager
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-SYSTEM_PROMPT = """You are DocuMind, an expert document intelligence assistant.
+SYSTEM_PROMPT = """You are DocuRAG, an expert document intelligence assistant.
 Your job is to answer questions accurately and concisely using ONLY the provided context.
 
 Rules:
+You answer questions STRICTLY from the context provided below.
+
+STRICT RULES — no exceptions:
+
+- Always cite the source document and page number.
 - Answer strictly from the context below. Do not use prior knowledge.
 - If the answer is not in the context, say: "I couldn't find that in the uploaded documents."
 - Always cite the source document and page number when referencing specific information.

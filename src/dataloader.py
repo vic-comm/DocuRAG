@@ -1,6 +1,4 @@
 """
-src/dataloader.py
-──────────────────
 Handles loading documents from:
   - Uploaded file bytes (FastAPI / Streamlit)
   - A directory on disk (batch ingestion)
@@ -12,7 +10,7 @@ from __future__ import annotations
 import logging
 import tempfile
 from pathlib import Path
-
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.document_loaders import (
     DirectoryLoader,
     PyPDFLoader,
@@ -32,7 +30,7 @@ settings = get_settings()
 
 # Supported file types and their loaders
 LOADER_MAP: dict[str, type] = {
-    ".pdf": PyPDFLoader,
+    ".pdf": PyMuPDFLoader,
     ".docx": UnstructuredWordDocumentLoader,
     ".doc": UnstructuredWordDocumentLoader,
     ".txt": TextLoader,
@@ -42,10 +40,7 @@ LOADER_MAP: dict[str, type] = {
 }
 
 
-# ──────────────────────────────────────────────────────────────────────────── #
-#  Core splitting logic                                                         #
-# ──────────────────────────────────────────────────────────────────────────── #
-
+#  Core splitting logic                                                       
 def _split_documents(docs: list[Document], source_name: str) -> list[Document]:
     """Split documents into chunks and attach source metadata."""
     splitter = RecursiveCharacterTextSplitter(
@@ -68,10 +63,7 @@ def _split_documents(docs: list[Document], source_name: str) -> list[Document]:
     return filtered
 
 
-# ──────────────────────────────────────────────────────────────────────────── #
-#  File bytes → chunks  (used by FastAPI & Streamlit upload)                   #
-# ──────────────────────────────────────────────────────────────────────────── #
-
+#  File bytes → chunks  (used by FastAPI & Streamlit upload)                   
 def process_uploaded_file(file_content: bytes, filename: str) -> list[Document]:
     """
     Saves raw bytes to a temp file, parses it with the appropriate loader,
@@ -115,10 +107,7 @@ def process_uploaded_file(file_content: bytes, filename: str) -> list[Document]:
         Path(tmp_path).unlink(missing_ok=True)
 
 
-# ──────────────────────────────────────────────────────────────────────────── #
-#  Directory → chunks  (used for batch ingestion)                              #
-# ──────────────────────────────────────────────────────────────────────────── #
-
+#  Directory → chunks  (used for batch ingestion)                              
 def load_directory(data_dir: str) -> list[Document]:
     """
     Recursively loads all supported documents from a directory.

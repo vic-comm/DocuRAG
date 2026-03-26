@@ -44,6 +44,15 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+    groq_model: str = Field(default="llama3-70b-8192", validation_alias="GROQ_MODEL")
+    openai_model: str = Field(default="gpt-4o", validation_alias="OPENAI_MODEL")
+    openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
+    use_openai_embeddings: bool = Field(default=False, validation_alias="USE_OPENAI_EMBEDDINGS")
+    history_k: int = Field(default=6, validation_alias="HISTORY_K")
+    log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
+    app_env: str = Field(default="development", validation_alias="APP_ENV")
+    langchain_tracing_v2: str = Field(default="false", validation_alias="LANGCHAIN_TRACING_V2")
+    langchain_api_key: str = Field(default="", validation_alias="LANGCHAIN_API_KEY")
 
     def validate_keys(self):
         """Manual check to prevent the cryptic Pydantic errors in the engine."""

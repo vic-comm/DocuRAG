@@ -70,7 +70,7 @@ def _build_llm():
     if provider == "groq":
         from langchain_groq import ChatGroq
         return ChatGroq(
-            model_name="llama3-70b-8192",
+            model_name=settings.groq_model,
             temperature=0,
             groq_api_key=settings.groq_api_key,
         )

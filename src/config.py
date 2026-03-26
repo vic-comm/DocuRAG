@@ -58,6 +58,13 @@ class Settings(BaseSettings):
             st.error(error_msg)
             raise ValueError(error_msg)
 
+    def get_llm_provider(self) -> str:
+        if self.groq_api_key and len(self.groq_api_key) > 0:
+            return "groq"
+        if self.openai_api_key and len(self.openai_api_key) > 0:
+            return "openai"
+        return "none" # Return a safe fallback
+    
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     settings = Settings()

@@ -4,7 +4,6 @@
 DocuRAG lets you upload any document (PDF, Word, TXT, Markdown, HTML) and have a precise, grounded conversation with it. Every answer is backed by citations from your source material — no hallucinations, no general knowledge, strictly your documents.
 
 🔗 **Live Demo:** [docurag-grxzmrohpnhxnd2znmrkqq.streamlit.app](https://docurag-grxzmrohpnhxnd2znmrkqq.streamlit.app)
-📁 **GitHub:** [github.com/vic-comm/DocuRAG](https://github.com/vic-comm/DocuRAG)
 
 ---
 

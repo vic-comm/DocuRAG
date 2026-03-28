@@ -29,23 +29,6 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-# def _build_llm():
-#     """Returns LLM for query rewriting (must match rag_engine LLM)."""
-#     if settings.llm_provider == "groq":
-#         from langchain_groq import ChatGroq
-#         return ChatGroq(
-#             model_name=settings.groq_model,
-#             temperature=0,
-#             groq_api_key=settings.groq_api_key,
-#         )
-#     else:
-#         from langchain_openai import ChatOpenAI
-#         return ChatOpenAI(
-#             model=settings.openai_model,
-#             temperature=0,
-#             openai_api_key=settings.openai_api_key,
-#         )
-
 def _build_llm():
     # Call the new method instead of .llm_provider
     provider = settings.get_llm_provider()
@@ -88,53 +71,6 @@ class RetrieverFactory:
         self._cache.pop(user_id, None)
         logger.debug(f"Retriever cache invalidated for user '{user_id}'")
 
-    # def _build(self, user_id: str):
-    #     """
-    #     Constructs the full 4-stage pipeline for a user.
-    #     Falls back to semantic-only if no documents are found for BM25.
-    #     """
-    #     # ── Stage 1 base: Semantic retriever ──────────────────────────── #
-    #     vector_retriever = self.vs_manager.get_base_retriever(user_id)
-
-    #     # ── Stage 2: Hybrid search (Semantic + BM25) ──────────────────── #
-    #     raw = self.vs_manager.get_user_documents_raw(user_id)
-    #     texts = raw.get("documents", [])
-    #     metadatas = raw.get("metadatas", [])
-
-    #     if texts:
-    #         bm25 = BM25Retriever.from_texts(texts, metadatas=metadatas)
-    #         bm25.k = settings.bm25_k
-
-    #         ensemble = EnsembleRetriever(
-    #             retrievers=[vector_retriever, bm25],
-    #             weights=[
-    #                 settings.ensemble_vector_weight,
-    #                 1 - settings.ensemble_vector_weight,
-    #             ],
-    #         )
-    #         base_retriever = ensemble
-    #         logger.debug(f"Hybrid retriever built for user '{user_id}'")
-    #     else:
-    #         # No documents yet — return a no-op retriever
-    #         logger.warning(
-    #             f"No documents found for user '{user_id}'. "
-    #             "Using semantic-only retriever."
-    #         )
-    #         base_retriever = vector_retriever
-
-    #     # ── Stage 3: Multi-query rewriting ────────────────────────────── #
-    #     mq_retriever = MultiQueryRetriever.from_llm(
-    #         retriever=base_retriever,
-    #         llm=self.llm,
-    #     )
-
-    #     # ── Stage 4: Cross-encoder re-ranking ─────────────────────────── #
-    #     reranker = ContextualCompressionRetriever(
-    #         base_compressor=FlashrankRerank(top_n=settings.rerank_top_n),
-    #         base_retriever=mq_retriever,
-    #     )
-
-    #     return reranker
 
     def _build(self, user_id: str):
         """

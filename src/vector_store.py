@@ -24,23 +24,6 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-# def _build_embeddings() -> Embeddings:
-#     """Returns the configured embeddings model."""
-#     if settings.use_openai_embeddings:
-#         from langchain_openai import OpenAIEmbeddings
-#         logger.info("Using OpenAI embeddings (text-embedding-3-small)")
-#         return OpenAIEmbeddings(
-#             model="text-embedding-3-small",
-#             openai_api_key=settings.openai_api_key,
-#         )
-#     else:
-#         from langchain_huggingface import HuggingFaceEmbeddings
-#         logger.info("Using HuggingFace embeddings (all-MiniLM-L6-v2)")
-#         return HuggingFaceEmbeddings(
-#             model_name="all-MiniLM-L6-v2",
-#             model_kwargs={"device": "cpu"},
-#             encode_kwargs={"normalize_embeddings": True},
-#         )
 
 def _build_embeddings() -> Embeddings:
     from langchain_google_genai import GoogleGenerativeAIEmbeddings
